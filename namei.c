@@ -158,6 +158,39 @@ out:
 	return ino;
 }
 
+int uxfs_delete_entry(struct inode *dir, char *name)
+{
+	struct ux_inode_info *ux_inode = uxfs_i(dir);
+	struct buffer_head *bh;
+	struct ux_dirent *de;
+	off_t offset = 0;
+	int i, j;
+
+	for (i = 0, offset = 0; i < dir->i_blocks; i++) {
+		bh = sb_bread(dir->i_sb, ux_inode->i_data[i]);	
+		if (!bh) {
+			printk("uxfs: unable to read dir block\n");
+			goto out;
+		}
+
+		de = (struct ux_dirent *)bh->b_data;
+		for (j = 0; j < UX_DIR_PER_BLK && offset < dir->i_size;
+				j++, de++) {
+			if (strncmp(name, de->d_name, strlen(name)) == 0) {
+				de->d_ino = 0;
+				memset(de->d_name, 0, UX_NAMELEN);
+				mark_inode_dirty(dir);
+				mark_buffer_dirty(bh);
+			    	brelse(bh);
+				return 0;
+			}
+		}
+		brelse(bh);
+	}
+out:
+	return -ENOENT;
+}
+
 static struct dentry *uxfs_lookup(struct inode * dir, struct dentry *dentry,
 				  struct nameidata *nd)
 {
@@ -204,7 +237,23 @@ static int uxfs_create(struct inode * dir, struct dentry *dentry, int mode,
 	return error;
 }
 
+static int uxfs_unlink(struct inode * dir, struct dentry *dentry)
+{
+	int err = -ENOENT;
+	struct inode * inode = dentry->d_inode;
+
+	err = uxfs_delete_entry(dir, (char *)dentry->d_name.name);
+	if (err)
+		goto end_unlink;
+
+	inode->i_ctime = dir->i_ctime;
+	inode_dec_link_count(inode);
+end_unlink:
+	return err;
+}
+
 struct inode_operations ux_dir_inode_operations = {
 	.lookup = uxfs_lookup,
 	.create = uxfs_create,
+	.unlink	= uxfs_unlink,
 };
