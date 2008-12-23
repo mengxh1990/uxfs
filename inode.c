@@ -4,7 +4,23 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/buffer_head.h>
+#include <linux/statfs.h>
 #include "uxfs.h"
+
+static int uxfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	struct super_block *sb = dentry->d_sb;
+	struct ux_sb_info *sbi = uxfs_sb(sb);
+	buf->f_type = sb->s_magic;
+	buf->f_bsize = sb->s_blocksize;
+	buf->f_blocks = UX_MAXBLOCKS;
+	buf->f_bfree = sbi->s_nbfree;
+	buf->f_bavail = sbi->s_nbfree;
+	buf->f_files = UX_MAXFILES;
+	buf->f_ffree = sbi->s_nifree;
+	buf->f_namelen = UX_NAMELEN;
+	return 0;
+}
 
 struct ux_inode *
 uxfs_raw_inode(struct super_block *sb, ino_t ino, struct buffer_head **bh)
@@ -124,6 +140,7 @@ static void destroy_inodecache(void)
 struct super_operations uxfs_sops = {
 	.alloc_inode	= uxfs_alloc_inode,
 	.destroy_inode	= uxfs_destroy_inode,
+	.statfs		= uxfs_statfs,
 };
 
 static int uxfs_fill_super(struct super_block *s, void *data, int silent)
