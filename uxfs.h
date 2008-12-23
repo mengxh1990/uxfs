@@ -21,6 +21,8 @@ struct ux_sb_info {
 
 extern struct file_operations ux_dir_operations;
 extern struct inode_operations ux_dir_inode_operations;
+extern struct file_operations ux_file_operations;
+extern struct inode_operations ux_file_inode_operations;
 
 static inline struct ux_sb_info *uxfs_sb(struct super_block *sb)
 {
@@ -33,7 +35,9 @@ static inline struct ux_inode_info *uxfs_i(struct inode *inode)
 }
 
 extern struct inode * uxfs_new_inode(struct super_block *sb, int *error);
+extern int uxfs_new_block(struct super_block *sb, int *error);
 extern void uxfs_set_inode(struct inode *inode);
 extern struct inode * uxfs_iget(struct super_block *sb, unsigned long ino);
+extern void uxfs_truncate(struct inode * inode);
 
 #endif /* __UXFS_H__ */
