@@ -184,10 +184,36 @@ static int uxfs_write_inode(struct inode * inode, int wait)
 	return 0;
 }
 
+static void uxfs_delete_inode(struct inode *inode)
+{
+	struct ux_sb_info *sbi = uxfs_sb(inode->i_sb);
+
+	struct buffer_head *bh = NULL;
+	struct ux_inode *raw_inode;
+
+	/* truncate inode */
+
+	sbi->s_inode[inode->i_ino] = UX_INODE_FREE;
+	sbi->s_nifree++;
+
+	raw_inode = uxfs_raw_inode(inode->i_sb, inode->i_ino, &bh);
+	if (raw_inode) {
+		raw_inode->i_nlink = 0;
+		raw_inode->i_mode = 0;
+	}
+	if (bh) {
+		mark_buffer_dirty(bh);
+		brelse(bh);
+	}
+
+	clear_inode(inode);
+}
+
 struct super_operations uxfs_sops = {
 	.alloc_inode	= uxfs_alloc_inode,
 	.destroy_inode	= uxfs_destroy_inode,
 	.write_inode	= uxfs_write_inode,
+	.delete_inode	= uxfs_delete_inode,
 	.statfs		= uxfs_statfs,
 	.put_super	= uxfs_put_super,
 };
