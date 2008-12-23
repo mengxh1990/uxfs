@@ -137,10 +137,59 @@ static void destroy_inodecache(void)
 	kmem_cache_destroy(uxfs_inode_cachep);
 }
 
+static void uxfs_put_super(struct super_block *sb)
+{
+	struct ux_sb_info *sbi = uxfs_sb(sb);
+	struct ux_superblock *usb = sbi->s_ms;
+	int	i;
+
+	if (!(sb->s_flags & MS_RDONLY))
+		mark_buffer_dirty(sbi->s_sbh);
+	usb->s_nifree = sbi->s_nifree;
+	usb->s_nbfree = sbi->s_nbfree;
+	usb->s_mod = sbi->s_mount_state;
+	for (i = 0; i < UX_MAXFILES; i++)
+		usb->s_inode[i] = sbi->s_inode[i];
+	for (i = 0; i < UX_MAXBLOCKS; i++)
+		usb->s_block[i] = sbi->s_block[i];
+	brelse(sbi->s_sbh);
+	sb->s_fs_info = NULL;
+	kfree(sbi);
+	return;
+}
+
+static int uxfs_write_inode(struct inode * inode, int wait)
+{
+	struct buffer_head	*bh;	
+	struct ux_inode		*raw_inode;
+	struct ux_inode_info	*ux_inode = uxfs_i(inode);
+	int			i;
+
+	raw_inode = uxfs_raw_inode(inode->i_sb, inode->i_ino, &bh);
+	if (!raw_inode)
+		return 0;
+	raw_inode->i_mode = inode->i_mode;
+	raw_inode->i_uid = inode->i_uid;
+	raw_inode->i_gid = inode->i_gid;
+	raw_inode->i_nlink = inode->i_nlink;
+	raw_inode->i_size = inode->i_size;
+	raw_inode->i_mtime = inode->i_mtime.tv_sec;
+	raw_inode->i_atime = inode->i_atime.tv_sec;
+	raw_inode->i_ctime = inode->i_ctime.tv_sec;
+	raw_inode->i_blocks = inode->i_blocks;
+	for (i = 0; i < UX_DIRECT_BLOCKS; i++)
+		raw_inode->i_addr[i] = ux_inode->i_data[i];
+	mark_buffer_dirty(bh);
+	brelse(bh);
+	return 0;
+}
+
 struct super_operations uxfs_sops = {
 	.alloc_inode	= uxfs_alloc_inode,
 	.destroy_inode	= uxfs_destroy_inode,
+	.write_inode	= uxfs_write_inode,
 	.statfs		= uxfs_statfs,
+	.put_super	= uxfs_put_super,
 };
 
 static int uxfs_fill_super(struct super_block *s, void *data, int silent)
