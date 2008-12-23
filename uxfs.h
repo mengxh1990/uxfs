@@ -32,6 +32,8 @@ static inline struct ux_inode_info *uxfs_i(struct inode *inode)
 	return list_entry(inode, struct ux_inode_info, vfs_inode);
 }
 
+extern struct inode * uxfs_new_inode(struct super_block *sb, int *error);
+extern void uxfs_set_inode(struct inode *inode);
 extern struct inode * uxfs_iget(struct super_block *sb, unsigned long ino);
 
 #endif /* __UXFS_H__ */
