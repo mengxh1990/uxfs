@@ -46,11 +46,9 @@ uxfs_raw_inode(struct super_block *sb, ino_t ino, struct buffer_head **bh)
 
 void uxfs_set_inode(struct inode *inode)
 {
-	/*
-	 * TODO: set inode and directory operations,
-	 * set inode->i_op, inode->i_fop
-	 */
 	if (S_ISREG(inode->i_mode)) {
+		inode->i_op = &ux_file_inode_operations; 
+		inode->i_fop = &ux_file_operations;	
 	} else if (S_ISDIR(inode->i_mode)) {
 		inode->i_op = &ux_dir_inode_operations; 
 		inode->i_fop = &ux_dir_operations;
@@ -191,8 +189,7 @@ static void uxfs_delete_inode(struct inode *inode)
 	struct buffer_head *bh = NULL;
 	struct ux_inode *raw_inode;
 
-	/* truncate inode */
-
+	uxfs_truncate(inode);
 	sbi->s_inode[inode->i_ino] = UX_INODE_FREE;
 	sbi->s_nifree++;
 
