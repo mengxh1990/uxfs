@@ -36,6 +36,8 @@ void uxfs_set_inode(struct inode *inode)
 	 */
 	if (S_ISREG(inode->i_mode)) {
 	} else if (S_ISDIR(inode->i_mode)) {
+		inode->i_op = &ux_dir_inode_operations; 
+		inode->i_fop = &ux_dir_operations;
 	}
 }
 
