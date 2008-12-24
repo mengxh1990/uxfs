@@ -23,6 +23,7 @@ extern struct file_operations ux_dir_operations;
 extern struct inode_operations ux_dir_inode_operations;
 extern struct file_operations ux_file_operations;
 extern struct inode_operations ux_file_inode_operations;
+extern struct address_space_operations ux_aops;
 
 static inline struct ux_sb_info *uxfs_sb(struct super_block *sb)
 {
