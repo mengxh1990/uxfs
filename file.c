@@ -2,92 +2,83 @@
 #include <linux/fs.h>
 #include "uxfs.h"
 
-#define MIN(a, b) ((a > b)? b: a)
-
-ssize_t uxfs_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos)
-{
-	struct inode *inode = filp->f_dentry->d_inode;
-	struct ux_inode_info *ux_inode = uxfs_i(inode);
-	int	blk;
-	off_t	offset, count, total_count = 0;
-	struct buffer_head *bh;
-	int error;
-
-again:
-	if (*ppos >= inode->i_size) {
-		if (inode->i_blocks < UX_DIRECT_BLOCKS) {
-			blk = uxfs_new_block(inode->i_sb, &error);
-			if (error)
-				goto out;
-			ux_inode->i_data[inode->i_blocks] = blk;
-			inode->i_blocks++;
-			mark_inode_dirty(inode);
-		} else {
-			printk("uxfs: file size too big!\n");
-			error = -EFAULT;
-			goto out;
-		}
-	}
-
-	blk = *ppos / UX_BSIZE;
-	offset = *ppos % UX_BSIZE;
-	bh = sb_bread(inode->i_sb, ux_inode->i_data[blk]);
-	if (!bh) {
-		error = -EIO;
-		goto out;
-	}
-	count = MIN(UX_BSIZE - offset, len);
-	if (copy_from_user(bh->b_data + offset, buf, count)) {
-		error = -EFAULT;
-		goto out;
-	}
-	mark_buffer_dirty(bh);
-	brelse(bh);
-	*ppos += count;
-	total_count += count;
-	if (*ppos > inode->i_size)
-		inode->i_size = *ppos;
-	if (count < len) {
-		buf += count;
-		len -= count;
-		goto again;
-	}
-out:
-	if (total_count)
-		return total_count;
-	return error;
-}
-
-ssize_t uxfs_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
-{
-	struct inode *inode = filp->f_dentry->d_inode;
-	struct ux_inode_info *ux_inode = uxfs_i(inode);
-	int	blk;
-	off_t	offset, count;
-	struct buffer_head *bh;
-
-	if (*ppos >= inode->i_size)
-		return 0;
-
-	blk = *ppos / UX_BSIZE;
-	offset = *ppos % UX_BSIZE;
-	bh = sb_bread(inode->i_sb, ux_inode->i_data[blk]);
-	if (!bh)
-		return -EIO;
-	count = MIN(inode->i_size - *ppos, len);
-	count = MIN(UX_BSIZE - offset, count);
-	if (copy_to_user(buf, bh->b_data + offset, count))
-		return -EFAULT;
-	mark_buffer_dirty(bh);
-	brelse(bh);
-	*ppos += count;
-	return count;
-}
-
 struct file_operations ux_file_operations = {
 	.llseek		= generic_file_llseek,
-	.read		= uxfs_read,
-	.write		= uxfs_write,
+	.read		= do_sync_read,
+	.aio_read	= generic_file_aio_read,
+	.write		= do_sync_write,
+	.aio_write	= generic_file_aio_write,
+};
+
+static int uxfs_get_block(struct inode *inode, sector_t block,
+		    struct buffer_head *bh, int create)
+{
+	struct ux_inode_info *ux_inode = uxfs_i(inode);
+	__u32	blk;
+	int	error;
+
+	/*
+	 * First check to see is the file can be extended.
+	 */
+	if (block >= UX_DIRECT_BLOCKS)
+		return -EFBIG;
+
+	/*
+	 * If we're creating, we must allocate a new block.
+	 */
+	if (create) {
+		blk = uxfs_new_block(inode->i_sb, &error);
+		if (error) {
+			printk("uxfs: ux_get_block - Out of space\n");
+			return -ENOSPC;
+		}
+		ux_inode->i_data[block] = blk;
+		inode->i_blocks++;
+		mark_inode_dirty(inode);
+	}
+
+	map_bh(bh, inode->i_sb, ux_inode->i_data[block]);
+	return 0;
+}
+
+static int uxfs_writepage(struct page *page, struct writeback_control *wbc)
+{
+	return block_write_full_page(page, uxfs_get_block, wbc);
+}
+
+static int uxfs_readpage(struct file *file, struct page *page)
+{
+	return block_read_full_page(page,uxfs_get_block);
+}
+
+int __uxfs_write_begin(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned flags,
+			struct page **pagep, void **fsdata)
+{
+	return block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+				uxfs_get_block);
+}
+
+static int uxfs_write_begin(struct file *file, struct address_space *mapping,
+			loff_t pos, unsigned len, unsigned flags,
+			struct page **pagep, void **fsdata)
+{
+	*pagep = NULL;
+	return __uxfs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+}
+
+static sector_t uxfs_bmap(struct address_space *mapping, sector_t block)
+{
+	return generic_block_bmap(mapping,block,uxfs_get_block);
+}
+
+struct address_space_operations ux_aops = {
+	.readpage = uxfs_readpage,
+	.writepage = uxfs_writepage,
+	.sync_page = block_sync_page,
+	.write_begin = uxfs_write_begin,
+	.write_end = generic_write_end,
+	.bmap = uxfs_bmap
 };
 
 void uxfs_truncate(struct inode * inode)
@@ -98,6 +89,7 @@ void uxfs_truncate(struct inode * inode)
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode)))
 		return;
 
+	block_truncate_page(inode->i_mapping, inode->i_size, uxfs_get_block);
 	inode->i_size = 0;
 	for (i = 0; i < inode->i_blocks; i++) {
 		blk = ux_inode->i_data[i];
