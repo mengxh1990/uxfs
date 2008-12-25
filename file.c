@@ -51,20 +51,9 @@ static int uxfs_readpage(struct file *file, struct page *page)
 	return block_read_full_page(page,uxfs_get_block);
 }
 
-int __uxfs_write_begin(struct file *file, struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned flags,
-			struct page **pagep, void **fsdata)
+static int uxfs_prepare_write(struct file *file, struct page *page, unsigned from, unsigned to)
 {
-	return block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
-				uxfs_get_block);
-}
-
-static int uxfs_write_begin(struct file *file, struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned flags,
-			struct page **pagep, void **fsdata)
-{
-	*pagep = NULL;
-	return __uxfs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+	return block_prepare_write(page,from,to,uxfs_get_block);
 }
 
 static sector_t uxfs_bmap(struct address_space *mapping, sector_t block)
@@ -76,8 +65,8 @@ struct address_space_operations ux_aops = {
 	.readpage = uxfs_readpage,
 	.writepage = uxfs_writepage,
 	.sync_page = block_sync_page,
-	.write_begin = uxfs_write_begin,
-	.write_end = generic_write_end,
+	.prepare_write = uxfs_prepare_write, 
+	.commit_write = generic_commit_write,
 	.bmap = uxfs_bmap
 };
 

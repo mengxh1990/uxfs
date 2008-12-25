@@ -70,8 +70,8 @@ int uxfs_add_link(struct dentry *dentry, struct inode *inode)
 	struct ux_inode_info *ux_inode = uxfs_i(dir);
 	const char * name = dentry->d_name.name;
 	struct super_block * sb = dir->i_sb;
-	struct ux_dirent * de;
-	struct buffer_head *bh;
+	struct ux_dirent * de = NULL;
+	struct buffer_head *bh = NULL;
         __u32 blk = 0;
 	int error;
 	int i, j;
@@ -202,7 +202,7 @@ static struct dentry *uxfs_lookup(struct inode * dir, struct dentry *dentry,
 
 	ino = uxfs_find_entry(dir, (char *)dentry->d_name.name);
 	if (ino) {
-		inode = uxfs_iget(dir->i_sb, ino);
+		inode = iget(dir->i_sb, ino);
 		if (!inode)
 			return ERR_PTR(-EACCES);
 	}
