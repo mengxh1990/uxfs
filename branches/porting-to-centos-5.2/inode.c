@@ -57,25 +57,17 @@ void uxfs_set_inode(struct inode *inode)
 	}
 }
 
-struct inode * uxfs_iget(struct super_block *sb, unsigned long ino)
+static void uxfs_read_inode(struct inode *inode)
 {
-	struct inode *inode;
 	struct buffer_head	*bh;
 	struct ux_inode		*raw_inode;
-	struct ux_inode_info	*ux_inode;
+	struct ux_inode_info	*ux_inode = uxfs_i(inode);
 	int			i;
 
-	inode = iget_locked(sb, ino);
-	if (!inode)
-		return ERR_PTR(-ENOMEM);
-	if (!(inode->i_state & I_NEW))
-		return inode;
-	
-	ux_inode = uxfs_i(inode);
 	raw_inode = uxfs_raw_inode(inode->i_sb, inode->i_ino, &bh);
 	if (!raw_inode) {
-		iget_failed(inode);
-		return ERR_PTR(-EIO);
+		make_bad_inode(inode);
+		return;
 	}
 	inode->i_mode = raw_inode->i_mode;
 	inode->i_nlink = raw_inode->i_nlink;
@@ -93,8 +85,6 @@ struct inode * uxfs_iget(struct super_block *sb, unsigned long ino)
 		ux_inode->i_data[i] = raw_inode->i_addr[i];
 	uxfs_set_inode(inode);
 	brelse(bh);
-	unlock_new_inode(inode);
-	return inode;
 }
 
 static struct kmem_cache * uxfs_inode_cachep;
@@ -113,11 +103,13 @@ static void uxfs_destroy_inode(struct inode *inode)
 	kmem_cache_free(uxfs_inode_cachep, uxfs_i(inode));
 }
 
-static void init_once(void * foo)
+static void init_once(void * foo, kmem_cache_t *cachep, unsigned long flags)
 {
 	struct ux_inode_info *ei = (struct ux_inode_info *) foo;
 
-	inode_init_once(&ei->vfs_inode);
+	if ((flags & (SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR)) ==
+            SLAB_CTOR_CONSTRUCTOR)
+		inode_init_once(&ei->vfs_inode);
 }
 
 static int init_inodecache(void)
@@ -126,7 +118,7 @@ static int init_inodecache(void)
 					     sizeof(struct ux_inode_info),
 					     0, (SLAB_RECLAIM_ACCOUNT|
 						SLAB_MEM_SPREAD),
-					     init_once);
+					     init_once, NULL);
 	if (uxfs_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;
@@ -208,9 +200,10 @@ static void uxfs_delete_inode(struct inode *inode)
 	clear_inode(inode);
 }
 
-struct super_operations uxfs_sops = {
+struct super_operations ux_sops = {
 	.alloc_inode	= uxfs_alloc_inode,
 	.destroy_inode	= uxfs_destroy_inode,
+	.read_inode	= uxfs_read_inode,
 	.write_inode	= uxfs_write_inode,
 	.delete_inode	= uxfs_delete_inode,
 	.statfs		= uxfs_statfs,
@@ -264,9 +257,9 @@ static int uxfs_fill_super(struct super_block *s, void *data, int silent)
 
 	s->s_magic = UX_MAGIC;
 	s->s_fs_info = sbi;
-	s->s_op = &uxfs_sops;
+	s->s_op = &ux_sops;
 
-	root = uxfs_iget(s, UX_ROOT_INO);
+	root = iget(s, UX_ROOT_INO);
 	if (!root)
 		goto out;
 
