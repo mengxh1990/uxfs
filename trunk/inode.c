@@ -187,14 +187,16 @@ static int uxfs_write_inode(struct inode * inode, int wait)
 static void uxfs_delete_inode(struct inode *inode)
 {
 	struct ux_sb_info *sbi = uxfs_sb(inode->i_sb);
-
 	struct buffer_head *bh = NULL;
 	struct ux_inode *raw_inode;
 
+	truncate_inode_pages(&inode->i_data, 0);
+	inode->i_size = 0;
 	uxfs_truncate(inode);
 	sbi->s_inode[inode->i_ino] = UX_INODE_FREE;
 	sbi->s_nifree++;
 
+	/* clear on-disk copy */
 	raw_inode = uxfs_raw_inode(inode->i_sb, inode->i_ino, &bh);
 	if (raw_inode) {
 		raw_inode->i_nlink = 0;
@@ -204,7 +206,8 @@ static void uxfs_delete_inode(struct inode *inode)
 		mark_buffer_dirty(bh);
 		brelse(bh);
 	}
-
+	
+	/* clear in-core inode */
 	clear_inode(inode);
 }
 
