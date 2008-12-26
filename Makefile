@@ -2,7 +2,7 @@ BUILD_SRC = /lib/modules/`uname -r`/build
 obj-m += uxfs.o
 uxfs-objs := inode.o dir.o namei.o file.o
 
-.PHONY: all modules
+.PHONY: all modules clean
 all: uxmkfs modules
 uxmkfs: mkfs.c ux_fs.h
 	$(CC) $^ -o $@
