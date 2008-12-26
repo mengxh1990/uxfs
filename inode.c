@@ -158,7 +158,7 @@ static void uxfs_put_super(struct super_block *sb)
 	return;
 }
 
-static int uxfs_write_inode(struct inode * inode, int wait)
+static struct buffer_head * uxfs_update_inode(struct inode * inode)
 {
 	struct buffer_head	*bh;	
 	struct ux_inode		*raw_inode;
@@ -167,7 +167,7 @@ static int uxfs_write_inode(struct inode * inode, int wait)
 
 	raw_inode = uxfs_raw_inode(inode->i_sb, inode->i_ino, &bh);
 	if (!raw_inode)
-		return 0;
+		return NULL;
 	raw_inode->i_mode = inode->i_mode;
 	raw_inode->i_uid = inode->i_uid;
 	raw_inode->i_gid = inode->i_gid;
@@ -180,8 +180,34 @@ static int uxfs_write_inode(struct inode * inode, int wait)
 	for (i = 0; i < UX_DIRECT_BLOCKS; i++)
 		raw_inode->i_addr[i] = ux_inode->i_data[i];
 	mark_buffer_dirty(bh);
-	brelse(bh);
+	return bh;
+}
+
+static int uxfs_write_inode(struct inode * inode, int wait)
+{
+	brelse(uxfs_update_inode(inode));
 	return 0;
+}
+
+int uxfs_sync_inode(struct inode * inode)
+{
+	int err = 0;
+	struct buffer_head *bh;
+
+	bh = uxfs_update_inode(inode);
+	if (bh && buffer_dirty(bh))
+	{
+		sync_dirty_buffer(bh);
+		if (buffer_req(bh) && !buffer_uptodate(bh))
+		{
+			printk("IO error syncing uxfs inode [%s:%08lx]\n",
+				inode->i_sb->s_id, inode->i_ino);
+			err = -1;
+		}
+	} else if (!bh)
+		err = -1;
+	brelse (bh);
+	return err;
 }
 
 static void uxfs_delete_inode(struct inode *inode)
