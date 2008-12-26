@@ -1,4 +1,5 @@
 #include <linux/buffer_head.h>
+#include <linux/smp_lock.h>
 #include "uxfs.h"
 
 struct inode * uxfs_new_inode(struct super_block *sb, int *error)

@@ -74,17 +74,20 @@ void uxfs_truncate(struct inode * inode)
 {
 	struct ux_sb_info *sbi = uxfs_sb(inode->i_sb);
 	struct ux_inode_info *ux_inode = uxfs_i(inode);
-	int i, blk;
+	int i, blk, last_block;
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode)))
 		return;
 
+	last_block = (inode->i_size + UX_BSIZE - 1) / UX_BSIZE;
 	block_truncate_page(inode->i_mapping, inode->i_size, uxfs_get_block);
-	inode->i_size = 0;
-	for (i = 0; i < inode->i_blocks; i++) {
+	for (i = last_block; i < inode->i_blocks; i++) {
 		blk = ux_inode->i_data[i];
-		sbi->s_block[blk - UX_FIRST_DATA_BLOCK] = UX_BLOCK_FREE;
+		if (blk) {
+			sbi->s_block[blk - UX_FIRST_DATA_BLOCK] = UX_BLOCK_FREE;
+			sbi->s_nbfree++;
+		}
 	}
-	sbi->s_nbfree += inode->i_blocks;
+	inode->i_blocks = last_block;
 }
 
 struct inode_operations ux_file_inode_operations = {
