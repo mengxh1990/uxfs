@@ -2,12 +2,29 @@
 #include <linux/fs.h>
 #include "uxfs.h"
 
+static int uxfs_sync_file(struct file * file, struct dentry *dentry, int datasync)
+{
+	struct inode *inode = dentry->d_inode;
+	int err;
+
+	err = sync_mapping_buffers(inode->i_mapping);
+	if (!(inode->i_state & I_DIRTY))
+		return err;
+	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
+		return err;
+	
+	err |= uxfs_sync_inode(inode);
+	return err ? -EIO : 0;
+}
+
 struct file_operations ux_file_operations = {
 	.llseek		= generic_file_llseek,
-	.read		= do_sync_read,
+	.read		= generic_file_read,
 	.aio_read	= generic_file_aio_read,
-	.write		= do_sync_write,
+	.write		= generic_file_write,
 	.aio_write	= generic_file_aio_write,
+	.mmap		= generic_file_mmap,
+	.fsync		= uxfs_sync_file,
 };
 
 static int uxfs_get_block(struct inode *inode, sector_t block,
@@ -17,15 +34,11 @@ static int uxfs_get_block(struct inode *inode, sector_t block,
 	__u32	blk;
 	int	error;
 
-	/*
-	 * First check to see is the file can be extended.
-	 */
+	/* First check to see is the file can be extended. */
 	if (block >= UX_DIRECT_BLOCKS)
 		return -EFBIG;
 
-	/*
-	 * If we're creating, we must allocate a new block.
-	 */
+	/* If we're creating, we must allocate a new block.  */
 	if (create) {
 		blk = uxfs_new_block(inode->i_sb, &error);
 		if (error) {
@@ -33,7 +46,7 @@ static int uxfs_get_block(struct inode *inode, sector_t block,
 			return -ENOSPC;
 		}
 		ux_inode->i_data[block] = blk;
-		inode->i_blocks++;
+		inode->i_blocks += UX_BSIZE / 512;
 		mark_inode_dirty(inode);
 	}
 
@@ -80,14 +93,14 @@ void uxfs_truncate(struct inode * inode)
 
 	last_block = (inode->i_size + UX_BSIZE - 1) / UX_BSIZE;
 	block_truncate_page(inode->i_mapping, inode->i_size, uxfs_get_block);
-	for (i = last_block; i < inode->i_blocks; i++) {
+	for (i = last_block; i < (inode->i_blocks / 2); i++) {
 		blk = ux_inode->i_data[i];
 		if (blk) {
 			sbi->s_block[blk - UX_FIRST_DATA_BLOCK] = UX_BLOCK_FREE;
 			sbi->s_nbfree++;
 		}
 	}
-	inode->i_blocks = last_block;
+	inode->i_blocks = last_block * 2;
 }
 
 struct inode_operations ux_file_inode_operations = {
