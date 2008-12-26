@@ -40,5 +40,6 @@ extern int uxfs_new_block(struct super_block *sb, int *error);
 extern void uxfs_set_inode(struct inode *inode);
 extern struct inode * uxfs_iget(struct super_block *sb, unsigned long ino);
 extern void uxfs_truncate(struct inode * inode);
+extern int uxfs_sync_inode(struct inode * inode);
 
 #endif /* __UXFS_H__ */
